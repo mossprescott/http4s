@@ -213,7 +213,37 @@ class ProcessWriterSpec extends Specification {
       val p = resource |> scalaz.stream.compress.deflate()
       DumpingWriter.dump(p) must_== p.runLog.run.foldLeft(ByteVector.empty)(_ ++ _)
     }
-
+    
+    "write a large deflated resource" in {
+      val Size = 200*1000
+      
+      class Count { var n = 0 }
+      val acquire = Task.delay {
+        val c = new Count
+        println(s"acquire: $c")
+        c
+      }
+      def release(c: Count) = Task.delay {
+        println(s"release: ${c.n}")
+        ()
+      }
+      def step(c: Count) = Task.delay {
+        val n = c.n
+        c.n += 1
+        if ((n % (10*1000)) == 0) {
+          println(s"step: $n")
+        }
+        if (n < Size) ByteVector.view(new Array[Byte](0))
+        else throw Cause.End.asThrowable
+      }
+      
+      val rsrc = scalaz.stream.io.resource(acquire)(release)(step)
+      
+      val p = rsrc |> scalaz.stream.compress.deflate()
+      // DumpingWriter.dump(p) must_== p.runLog.run.foldLeft(ByteVector.empty)(_ ++ _)
+      DumpingWriter.dump(p) must_== ByteVector.view(Array.fill[Byte](8)(0))
+    }
+    
     "ProcessWriter must be stack safe" in {
       val p = Process.repeatEval(Task.async[ByteVector]{ _(\/-(ByteVector.empty))}).take(300000)
 
